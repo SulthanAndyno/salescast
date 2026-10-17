@@ -42,25 +42,31 @@ def features_of(X: pd.DataFrame) -> list[str]:
     return [c for c in X.columns if c not in ("date", "sales", "gap")]
 
 
+def fit(ctx: dict, wide: pd.DataFrame, cutoff: pd.Timestamp) -> lgb.Booster:
+    """Latih di target ≤ cutoff (TRAIN_DAYS terakhir); data setelah cutoff tidak pernah disentuh."""
+    X = build(wide.loc[:cutoff], ctx, start=cutoff - pd.Timedelta(days=TRAIN_DAYS))
+    train = X[~X["gap"] & ~X["date"].between(*QUAKE)]
+    cols = features_of(X)
+    return lgb.train(PARAMS, lgb.Dataset(train[cols], np.log1p(train["sales"])), num_boost_round=ROUNDS)
+
+
+def predict(model: lgb.Booster, ctx: dict, wide: pd.DataFrame, dates: pd.DatetimeIndex) -> pd.DataFrame:
+    """Forecast `dates` memakai data sebelum dates[0]; model boleh dilatih di cutoff yang lebih lama."""
+    hist = wide.loc[: dates[0] - pd.Timedelta(days=1)]
+    X = build(hist.reindex(pd.date_range(hist.index[0], dates[-1])), ctx, start=dates[0])
+    pred = X[["date", *SERIES]].assign(sales=np.expm1(model.predict(X[model.feature_name()])).clip(0))
+    pred = pred.set_index(["date", *SERIES])["sales"].unstack(SERIES).reindex(columns=hist.columns)
+    dead = hist.iloc[-56:].sum() == 0  # tidak terjual 8 minggu → prediksi 0
+    pred.loc[:, dead[dead].index] = 0.0
+    return pred
+
+
 def lgbm(ctx: dict, importance: list | None = None) -> Forecaster:
     def forecast(hist: pd.DataFrame, dates: pd.DatetimeIndex) -> pd.DataFrame:
-        cutoff = hist.index[-1]
-        wide = hist.reindex(pd.date_range(hist.index[0], dates[-1]))
-        X = build(wide, ctx, start=cutoff - pd.Timedelta(days=TRAIN_DAYS))
-        d = X["date"]
-        train = X[(d <= cutoff) & ~X["gap"] & ~d.between(*QUAKE)]
-        test = X[d.isin(dates)]
-
-        cols = features_of(X)
-        model = lgb.train(PARAMS, lgb.Dataset(train[cols], np.log1p(train["sales"])), num_boost_round=ROUNDS)
+        model = fit(ctx, hist, hist.index[-1])
         if importance is not None:
-            importance.append(pd.Series(model.feature_importance("gain"), index=cols))
-
-        pred = test[["date", *SERIES]].assign(sales=np.expm1(model.predict(test[cols])).clip(0))
-        pred = pred.set_index(["date", *SERIES])["sales"].unstack(SERIES).reindex(columns=hist.columns)
-        dead = hist.iloc[-56:].sum() == 0  # tidak terjual 8 minggu → prediksi 0
-        pred.loc[:, dead[dead].index] = 0.0
-        return pred
+            importance.append(pd.Series(model.feature_importance("gain"), index=model.feature_name()))
+        return predict(model, ctx, hist, dates)
 
     return forecast
 
