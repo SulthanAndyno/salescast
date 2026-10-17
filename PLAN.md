@@ -25,7 +25,7 @@ ada sekitar 32 "minggu baru", cukup buat grafik monitoring yang meyakinkan.
 | Strategi *direct*: semua lag ≥ 16 hari | satu model langsung memprediksi H+1..H+16 tanpa prediksi rekursif |
 | Baseline: seasonal naive (nilai hari yang sama minggu lalu) | model wajib mengalahkannya; kalau tidak, modelnya tidak berguna |
 | Dashboard statis di GitHub Pages | tidak perlu server; forecast diekspor jadi JSON |
-| Registry di HF Hub (pola sama dengan GambleScan) | sudah terbukti di proyek sebelumnya |
+| Registry di GitHub Releases | tidak perlu token tambahan; workflow pakai `GITHUB_TOKEN` bawaan |
 
 ---
 
@@ -61,10 +61,11 @@ ada sekitar 32 "minggu baru", cukup buat grafik monitoring yang meyakinkan.
 
 ## F4: Gate + registry + rollback
 - Challenger dilatih ≤ (kursor − 16), dievaluasi di 16 hari terakhir; champion dievaluasi di jendela yang sama.
-- Promosikan jika: RMSLE challenger ≤ champion **dan** lebih baik ≥ 5% dari seasonal naive.
-  Jika lolos, refit di data ≤ kursor, lalu push ke HF Hub dengan tag versi.
-- `python -m salescast.model --list` / `--rollback VERSI`.
-- **Selesai kalau:** test gate menolak model sengaja-rusak (mis. fitur diacak) dan menerima model normal.
+- Promosikan jika: RMSLE challenger ≤ champion **dan** ≥ 5% lebih baik dari moving average 28 hari.
+  Tidak di-refit: champion lama juga dilatih ≤ cutoff-nya sendiri, jadi dua-duanya belum pernah melihat jendela uji
+  (fitur tetap dihitung dari data terbaru saat prediksi). Lolos → GitHub Release `model-<kursor>`.
+- Rollback: Actions → retrain → Run workflow → `rollback_to`.
+- **Selesai kalau:** test gate menolak challenger yang kalah dari champion/baseline dan menerima yang menang.
 
 ## F5: CD dashboard
 - `salescast/export.py` → `site/forecast.json` (forecast 16 hari + 60 hari aktual terakhir per series) &
