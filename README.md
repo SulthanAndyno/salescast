@@ -19,3 +19,4 @@ uv run pytest -q
 | F2 fitur + LightGBM | `salescast/features.py`, `salescast/model.py` | `python -m salescast.model` (±4 menit) |
 | F3 CT mingguan | `salescast/ct.py`, `.github/workflows/retrain.yml` | `python -m salescast.ct` (kursor +7 hari → nilai forecast lama → retrain) |
 | F4 gate + registry + rollback | `salescast/ct.py`, `retrain.yml` | champion di GitHub Releases; rollback: Actions → retrain → Run workflow → isi `rollback_to` |
+| F5 dashboard | `salescast/export.py`, `site/index.html`, `pages.yml` | `python -m salescast.export && python -m http.server -d site` |

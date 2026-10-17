@@ -1,0 +1,48 @@
+name: pages
+on:
+  workflow_run:
+    workflows: [retrain]
+    types: [completed]
+  push:
+    branches: [main]
+    paths: [site/**, salescast/export.py]
+  workflow_dispatch:
+concurrency:
+  group: pages
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7 # workflow_run → HEAD main terbaru, termasuk commit bot retrain
+      - uses: astral-sh/setup-uv@v10.3.0
+      - run: uv sync --locked
+      - id: cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: data/*.parquet
+          key: favorita-parquet-v1
+      - if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: uv run python -m salescast.data download
+      - run: uv run python -m salescast.export
+      - uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5.0.1
