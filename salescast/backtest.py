@@ -43,12 +43,16 @@ def cutoffs(cursor: pd.Timestamp, n: int = 6) -> list[pd.Timestamp]:
     return [last - pd.Timedelta(weeks=k) for k in range(n - 1, -1, -1)]
 
 
-def close_holidays(pred: pd.DataFrame) -> pd.DataFrame:
-    """25 Des semua toko tutup, 1 Jan hampir semua tutup: dua-duanya sudah pasti dari kalender, jadi prediksi 0."""
+def is_closed(dates) -> np.ndarray:
+    """25 Des semua toko tutup, 1 Jan hampir semua tutup: dua-duanya sudah pasti dari kalender."""
     # ponytail: aturan tanggal tetap; ganti fitur "toko tutup" per toko kalau nanti ada tanggal tutup lain
-    closed = (pred.index.month == 12) & (pred.index.day == 25) | (pred.index.month == 1) & (pred.index.day == 1)
+    dates = pd.DatetimeIndex(dates)
+    return np.asarray((dates.month == 12) & (dates.day == 25) | (dates.month == 1) & (dates.day == 1))
+
+
+def close_holidays(pred: pd.DataFrame) -> pd.DataFrame:
     pred = pred.copy()
-    pred.loc[closed] = 0.0
+    pred.loc[is_closed(pred.index)] = 0.0
     return pred
 
 
