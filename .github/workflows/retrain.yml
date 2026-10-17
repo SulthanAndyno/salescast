@@ -18,7 +18,7 @@ jobs:
       - run: uv sync --locked
       # data Kaggle statis → cache sekali; hanya parquet, cursor.txt tetap dari repo
       - id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: data/*.parquet
           key: favorita-parquet-v1
