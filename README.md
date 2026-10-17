@@ -2,27 +2,65 @@
 
 [![ci](https://github.com/SulthanAndyno/salescast/actions/workflows/ci.yml/badge.svg)](https://github.com/SulthanAndyno/salescast/actions/workflows/ci.yml)
 [![retrain](https://github.com/SulthanAndyno/salescast/actions/workflows/retrain.yml/badge.svg)](https://github.com/SulthanAndyno/salescast/actions/workflows/retrain.yml)
+[![pages](https://github.com/SulthanAndyno/salescast/actions/workflows/pages.yml/badge.svg)](https://sulthanandyno.github.io/salescast/)
 
-Forecast penjualan harian **16 hari ke depan** untuk **1.782 series** (54 toko × 33 kategori) supermarket Favorita,
-Ekuador, dengan pipeline CI/CD/CT penuh: retrain otomatis, gate champion vs challenger, registry model, rollback,
-dashboard, dan alert. Semua jalan gratis di GitHub Actions + GitHub Pages.
+Proyek forecasting penjualan harian untuk jaringan supermarket Favorita di Ekuador. Model memprediksi penjualan
+16 hari ke depan untuk 54 toko x 33 kategori produk (1.782 deret waktu sekaligus), lalu dilatih ulang secara otomatis
+di GitHub Actions setiap ada "data minggu baru".
 
-**Dashboard live:** https://sulthanandyno.github.io/salescast/
+Fokus proyek ini bukan cuma modelnya, tapi juga alur setelah model jadi: bagaimana model baru diuji sebelum dipakai,
+disimpan berversi, bisa di-rollback, dipantau akurasinya dari minggu ke minggu, dan memberi tahu kalau ada yang aneh.
+Semuanya jalan gratis di GitHub Actions dan GitHub Pages.
+
+Dashboard: https://sulthanandyno.github.io/salescast/
+
+![Dashboard SalesCast](docs/dashboard.png)
+
+## Daftar isi
+
+- [Data](#data)
+- [Hasil](#hasil)
+- [Cara kerja](#cara-kerja)
+- [Workflow GitHub Actions](#workflow-github-actions)
+- [Hal yang saya temukan selama pengerjaan](#hal-yang-saya-temukan-selama-pengerjaan)
+- [Batasan](#batasan)
+- [Menjalankan di lokal](#menjalankan-di-lokal)
+- [Struktur repo](#struktur-repo)
+
+## Data
+
+Dataset dari kompetisi Kaggle [Store Sales - Time Series Forecasting](https://www.kaggle.com/competitions/store-sales-time-series-forecasting).
+
+| File | Isi | Ukuran |
+|---|---|---|
+| `train.csv` | penjualan harian per toko dan kategori, 1 Jan 2013 s.d. 15 Agu 2017 | 3.000.888 baris |
+| `stores.csv` | kota, provinsi, tipe, dan cluster tiap toko | 54 baris |
+| `holidays_events.csv` | hari libur nasional, regional, lokal, dan event | 350 baris |
+| `oil.csv` | harga minyak harian (ekonomi Ekuador sangat bergantung pada minyak) | 1.218 baris |
+| `transactions.csv` | jumlah transaksi per toko per hari | 83.488 baris |
+
+Data tidak disimpan di repo karena terikat aturan kompetisi. Workflow mengunduhnya lewat Kaggle API lalu menyimpannya
+di cache Actions.
+
+Metrik yang dipakai adalah RMSLE, sama seperti di kompetisinya. Metrik ini menilai kesalahan relatif, jadi meleset
+10 unit di produk yang lakunya 20 dianggap lebih parah daripada meleset 10 unit di produk yang lakunya 2.000.
+Makin kecil makin baik.
 
 ## Hasil
 
-Metrik: RMSLE (sama dengan kompetisi Kaggle-nya), makin kecil makin baik.
-
-**Backtest walk-forward** (6 cutoff mingguan, 11 Nov – 16 Des 2016, tiap cutoff memprediksi 16 hari):
+Backtest dengan 6 titik potong mingguan (11 Nov s.d. 16 Des 2016). Di setiap titik potong, model hanya boleh
+melihat data sebelum tanggal itu lalu memprediksi 16 hari berikutnya.
 
 | Model | RMSLE rata-rata |
 |---|---|
-| Seasonal naive (hari yang sama minggu lalu) | 0,680 |
+| Seasonal naive (penjualan hari yang sama minggu lalu) | 0,680 |
 | Rata-rata 28 hari terakhir | 0,610 |
-| **LightGBM** | **0,528** (menang di 6/6 cutoff) |
+| LightGBM | 0,528 |
 
-**Error realisasi selama simulasi CT** (forecast minggu lalu dinilai terhadap aktual yang baru terungkap; angka terbaru
-ada di dashboard):
+LightGBM lebih baik di keenam titik potong.
+
+Selama simulasi berjalan, forecast setiap minggu dinilai ulang saat data aktualnya sudah "terungkap". Angka ini lebih
+jujur daripada backtest karena memakai model yang benar-benar dipakai saat itu. Angka terbaru ada di dashboard.
 
 | Minggu s.d. | LightGBM | Rata-rata 28 hari |
 |---|---|---|
@@ -31,83 +69,150 @@ ada di dashboard):
 | 22 Jan 2017 | 0,398 | 0,582 |
 | 29 Jan 2017 | 0,389 | 0,524 |
 
-**Per kategori** (holdout 14–29 Jan 2017): paling mudah kategori bervolume besar dan stabil — HOME CARE 0,17,
-PRODUCE 0,17, DAIRY 0,18, GROCERY I 0,20. Paling sulit kategori kecil yang sering 0 — LINGERIE 0,63, GROCERY II 0,58,
-CELEBRATION 0,57. Selisih terbesar dari baseline ada di FROZEN FOODS (0,36 vs 1,63) dan LIQUOR,WINE,BEER (0,50 vs 1,11):
-rata-rata 28 hari ikut menyeret lonjakan Desember ke Januari, LightGBM tidak.
+Kalau dipecah per kategori (holdout 14 s.d. 29 Jan 2017), kategori yang volumenya besar dan stabil paling mudah
+diprediksi, misalnya HOME CARE dan PRODUCE (0,17) serta DAIRY (0,18). Yang paling susah adalah kategori kecil yang
+sering tidak laku sama sekali, seperti LINGERIE (0,63), GROCERY II (0,58), dan CELEBRATION (0,57). Selisih paling jauh
+dari baseline ada di FROZEN FOODS (0,36 lawan 1,63) dan LIQUOR,WINE,BEER (0,50 lawan 1,11), karena rata-rata 28 hari
+ikut membawa lonjakan belanja Desember ke bulan Januari.
 
 ## Cara kerja
 
-```
-Kaggle ──download──▶ data/*.parquet (cache Actions)
-                         │
-   retrain.yml (harian) ─┤ 1. kursor maju 7 hari ("minggu baru datang")
-                         │ 2. nilai forecast minggu lalu → reports/metrics.jsonl
-                         │ 3. challenger dilatih ≤ kursor−16, diuji di 16 hari terakhir
-                         │    vs champion (GitHub Release) & baseline → gate
-                         │ 4. lolos → Release model-<kursor>; champion buat forecast 16 hari
-                         │ 5. error melonjak → GitHub Issue
-                         ▼
-   pages.yml ─────────▶ site/data.json + index.html → GitHub Pages
-```
+### Simulasi data baru
 
-- **Kursor waktu.** Data asli berhenti di 15 Agu 2017. Simulasi mulai di 1 Jan 2017; data setelah kursor dianggap belum
-  ada. Tiap run memajukan kursor 7 hari, jadi ±31 run sampai data habis.
-- **Strategi direct.** Semua fitur penjualan memakai data ≥ 16 hari sebelum tanggal target (lag 16/21/28/35/42/364,
-  rata-rata bergerak), sehingga satu model memprediksi H+1..H+16 tanpa prediksi rekursif. Fitur lain: hari gajian,
-  libur nasional & lokal (dicocokkan ke kota/provinsi toko), promo, harga minyak (digeser 16 hari).
-- **Satu model global** LightGBM untuk semua series, target `log1p(sales)` → L2 loss = optimasi RMSLE.
-- **Gate adil.** Challenger dan champion sama-sama dilatih sebelum jendela uji, jadi dua-duanya belum pernah melihatnya.
-  Lolos jika RMSLE ≤ champion **dan** ≥ 5% lebih baik dari baseline. Model tidak di-refit setelah lolos; fitur tetap
-  dihitung dari data terbaru saat prediksi, jadi yang hilang hanya 16 hari terakhir sebagai contoh training.
-- **Test anti-leakage** (`tests/test_features.py`): semua data setelah t diganti 9999, fitur sampai t+16 harus identik.
+Data aslinya berhenti di 15 Agustus 2017, jadi tidak ada data baru yang benar-benar masuk. Untuk menguji pipeline
+retrain, saya pakai file `data/cursor.txt` yang berisi tanggal "hari ini". Semua data setelah tanggal itu dianggap
+belum ada. Simulasi dimulai dari 1 Januari 2017, dan setiap kali workflow retrain jalan, kursor maju 7 hari. Dari
+Januari sampai Agustus ada sekitar 31 langkah.
 
-## Temuan
+### Model
 
-1. **Data hilang yang menyamar jadi nol.** Simulasi CT minggu pertama membuat LightGBM kalah telak (RMSLE 1,05 vs
-   baseline 0,59). Penyebabnya: di sekitar Feb 2014 – Mei 2015, penjualan ±10 kategori (PRODUCE, HOME CARE,
-   CELEBRATION, LADIESWEAR, PET SUPPLIES, dll.) tercatat ~0 di ratusan hari (PRODUCE: 300 hari) — data tidak tercatat,
-   bukan penjualan anjlok. Jendela training 2 tahun memuat Jan–Mei 2015, jadi model belajar "Januari = anjlok".
-   Perbaikan (`features.gaps`): tanggal × kategori yang total nasionalnya < 1% dari rekor sebelumnya dianggap data
-   hilang, dikeluarkan dari fitur dan target. Setelahnya Januari 2017 jadi 0,51 vs 0,61, dan dua kategori itu kini
-   termudah. Backtest Nov–Des tidak menangkap bug ini; monitoring CT yang menangkapnya.
-2. **Hari tutup.** 25 Des (semua toko) dan 1 Jan (hampir semua) tidak ada atau ~0 di data. Prediksi di dua tanggal itu
-   dipaksa 0; tanpa itu RMSLE cutoff Desember melonjak ke 1,3–1,7. Seasonal naive tetap rusak sesudahnya karena menyalin
-   angka 0 itu ke minggu berikutnya.
-3. **Gempa 16 Apr 2016** memicu lonjakan pembelian untuk donasi selama beberapa minggu; 16 Apr – 15 Mei 2016 tidak
-   dipakai sebagai target training.
-4. **31% nilai penjualan = 0.** Series yang 8 minggu tidak terjual langsung diprediksi 0.
+Satu model LightGBM dipakai untuk semua 1.782 deret sekaligus. Targetnya `log1p(sales)`, sehingga loss L2 biasa
+sama dengan mengoptimalkan RMSLE.
 
-## Batasan (jujur)
+Supaya satu model bisa langsung memprediksi hari ke-1 sampai ke-16 tanpa menebak berantai, semua fitur penjualan
+hanya memakai data minimal 16 hari sebelum tanggal yang diprediksi:
 
-- Ini **simulasi**: "data baru" sebenarnya data historis 2017 yang dibuka bertahap. Retrain harian = satu minggu
-  simulasi per hari supaya pipeline teruji ±31 kali dalam sebulan.
-- `onpromotion` untuk tanggal target diambil dari data (jadwal promo dianggap diketahui sebelumnya, seperti di
-  `test.csv` Kaggle). Harga minyak hanya dipakai versi 16 hari lalu.
-- Backtest hanya 6 cutoff di musim akhir tahun; angka realisasi CT di dashboard lebih representatif.
-- Aturan "total < 1% dari rekor = data hilang" juga menandai musim sepi yang **nyata** (SCHOOL AND OFFICE SUPPLIES
-  di luar musim sekolah, BOOKS sejak Mei 2017), sehingga hari-hari itu ikut keluar dari training. Belum diukur
-  dampaknya; perbaikannya membedakan gap mendadak (data hilang) dari penurunan bertahap (musiman).
-- Belum ada interval prediksi (hanya titik) dan belum ada rekonsiliasi hierarki (toko → total).
+- lag 16, 21, 28, 35, 42, dan 364 hari (21 sampai 42 jatuh di hari yang sama dalam minggu, 364 = tahun lalu)
+- rata-rata 7, 14, 28, 56 hari dan standar deviasi 28 hari, semuanya digeser 16 hari
+- tanggal, hari dalam minggu, bulan, dan hari gajian (tanggal 15 dan akhir bulan untuk pegawai negeri Ekuador)
+- libur nasional, serta libur regional/lokal yang dicocokkan ke kota dan provinsi tiap toko
+- jumlah produk yang sedang promo
+- harga minyak, juga digeser 16 hari
+- tipe dan cluster toko
 
-## Jalankan lokal
+Ada test yang memastikan tidak ada kebocoran data: semua penjualan setelah tanggal t diganti 9999, lalu fitur sampai
+tanggal t+16 harus tetap sama persis (`tests/test_features.py`).
+
+### Gate sebelum model dipakai
+
+Setiap run melatih model baru (challenger) dengan data sampai 16 hari sebelum kursor. Lalu challenger, model yang
+sedang dipakai (champion), dan baseline rata-rata 28 hari diuji di 16 hari terakhir itu. Karena champion juga dilatih
+sebelum periode tersebut, ketiganya sama-sama belum pernah melihat data uji.
+
+Challenger menggantikan champion kalau RMSLE-nya tidak lebih buruk dari champion dan setidaknya 5% lebih baik dari
+baseline. Kalau tidak lolos, champion lama tetap dipakai untuk forecast.
+
+Model yang lolos tidak dilatih ulang dengan 16 hari terakhir. Fiturnya tetap dihitung dari data terbaru saat
+prediksi, jadi yang hilang hanya 16 hari contoh training. Dengan cara ini perbandingan di gate tetap adil.
+
+### Registry dan rollback
+
+Setiap model yang lolos gate disimpan sebagai GitHub Release dengan nama `model-<tanggal kursor>`, isinya file model
+LightGBM sekitar 7 MB dan skor holdout-nya. File `reports/champion.json` menunjuk versi mana yang sedang dipakai.
+
+Untuk rollback: buka Actions, pilih workflow retrain, klik Run workflow, lalu isi `rollback_to` dengan versi lama dari
+halaman Releases.
+
+### Monitoring dan alert
+
+Setiap minggu, forecast minggu sebelumnya dinilai dengan data aktual yang baru terungkap, lalu dicatat di
+`reports/metrics.jsonl`. Kalau error minggu itu lebih dari 1,5 kali median 8 minggu sebelumnya, workflow membuka
+GitHub Issue berisi angka error, link dashboard, dan langkah rollback.
+
+## Workflow GitHub Actions
+
+| Workflow | Kapan jalan | Isinya |
+|---|---|---|
+| `ci.yml` | setiap push dan pull request | ruff (lint + format) dan pytest |
+| `retrain.yml` | setiap hari 08.00 WIB, atau manual | majukan kursor, nilai forecast lama, latih challenger, gate, rilis model, forecast baru, alert, commit hasil |
+| `pages.yml` | setelah retrain selesai, atau saat `site/` berubah | buat `data.json` lalu deploy dashboard ke GitHub Pages |
+
+Secret yang perlu diisi hanya `KAGGLE_API_TOKEN`. Release, Issue, dan Pages memakai token bawaan GitHub Actions.
+
+## Hal yang saya temukan selama pengerjaan
+
+### Data yang hilang terbaca sebagai nol
+
+Di minggu pertama simulasi, LightGBM malah kalah jauh dari baseline (RMSLE 1,05 lawan 0,59), padahal di backtest
+selalu menang. Setelah saya cek per kategori, error-nya menumpuk di PRODUCE dan HOME CARE. Model memprediksi angka
+mendekati 0, padahal penjualan aslinya ribuan.
+
+Ternyata antara Februari 2014 dan Mei 2015, sekitar 10 kategori (PRODUCE, HOME CARE, CELEBRATION, LADIESWEAR,
+PET SUPPLIES, dan lainnya) tercatat hampir 0 di ratusan hari. PRODUCE saja 300 hari. Ini data yang tidak tercatat,
+bukan penjualan yang benar-benar turun. Jendela training 2 tahun ikut memuat Januari sampai Mei 2015, jadi model
+belajar pola yang salah: setiap Januari, kategori-kategori ini anjlok.
+
+Perbaikannya ada di `features.gaps()`. Kalau total penjualan nasional sebuah kategori di satu hari kurang dari 1%
+dari rekor sebelumnya, hari itu dianggap data hilang dan dikeluarkan dari fitur maupun target training. Setelah itu
+Januari 2017 jadi 0,51 lawan 0,61, dan PRODUCE serta HOME CARE berubah jadi kategori paling mudah diprediksi.
+
+Backtest November sampai Desember tidak menangkap masalah ini. Monitoring mingguan yang menangkapnya.
+
+### Hari toko tutup
+
+Tanggal 25 Desember tidak ada di data sama sekali, dan total penjualan 1 Januari hampir nol (sekitar 12 ribu, padahal median hari biasa di Januari 2017 sekitar 790 ribu). Tanpa penanganan khusus,
+RMSLE di titik potong Desember melonjak ke 1,3 sampai 1,7. Sekarang prediksi di dua tanggal itu langsung 0, dan
+keduanya tidak dipakai sebagai fitur. Seasonal naive tetap rusak di minggu setelahnya karena menyalin angka 0 itu.
+
+### Hal kecil lainnya
+
+- Gempa 16 April 2016 membuat orang memborong barang untuk donasi selama beberapa minggu. Periode 16 April sampai
+  15 Mei 2016 tidak dipakai sebagai target training.
+- 31% nilai penjualan adalah 0. Deret yang 8 minggu tidak laku langsung diprediksi 0.
+
+## Batasan
+
+- Ini simulasi. "Data baru" sebenarnya data 2017 yang dibuka bertahap, dan retrain harian berarti satu minggu
+  simulasi per hari supaya pipeline teruji puluhan kali dalam sebulan.
+- Data promo untuk tanggal yang diprediksi diambil langsung dari dataset, dengan asumsi jadwal promo sudah diketahui
+  sebelumnya (Kaggle juga memberikannya di `test.csv`).
+- Backtest hanya 6 titik potong dan semuanya di musim akhir tahun. Angka realisasi di dashboard lebih representatif.
+- Aturan 1% di atas juga menandai musim sepi yang memang nyata, misalnya SCHOOL AND OFFICE SUPPLIES di luar musim
+  sekolah dan BOOKS sejak Mei 2017. Dampaknya belum saya ukur. Rencananya membedakan penurunan mendadak (data hilang)
+  dari penurunan bertahap (musiman).
+- Forecast masih berupa satu angka per hari, belum ada rentang ketidakpastian.
+
+## Menjalankan di lokal
+
+Butuh Python 3.12+ dan [uv](https://docs.astral.sh/uv/). Sebelum mengunduh data, terima dulu aturan kompetisi di
+halaman Kaggle-nya, lalu buat API token di https://www.kaggle.com/settings.
 
 ```bash
-export UV_CACHE_DIR=/workspace/.cache/uv KAGGLEHUB_CACHE=/workspace/.cache/kagglehub
-export KAGGLE_API_TOKEN=...   # atau KAGGLE_USERNAME + KAGGLE_KEY
 uv sync
-uv run python -m salescast.data download   # rules kompetisi harus sudah di-accept di web Kaggle
-uv run pytest -q
+export KAGGLE_API_TOKEN=token_kamu
+uv run python -m salescast.data download     # unduh data ke data/*.parquet
+uv run pytest -q                             # test
+
+uv run python -m salescast.backtest          # baseline
+uv run python -m salescast.model             # backtest LightGBM, sekitar 4 menit
+uv run python -m salescast.ct                # satu langkah simulasi (mengubah cursor.txt dan reports/)
+uv run python -m salescast.export            # buat site/data.json
+python -m http.server -d site                # buka http://localhost:8000
 ```
 
-| Fase | File | Perintah |
-|---|---|---|
-| F0 CI + data + kursor | `.github/workflows/ci.yml`, `salescast/data.py` | `python -m salescast.data download\|cursor\|advance` |
-| F1 baseline + backtest | `salescast/backtest.py` | `python -m salescast.backtest` |
-| F2 fitur + LightGBM | `salescast/features.py`, `salescast/model.py` | `python -m salescast.model` (±4 menit) |
-| F3 CT mingguan | `salescast/ct.py`, `.github/workflows/retrain.yml` | `python -m salescast.ct` |
-| F4 gate + registry + rollback | `salescast/ct.py`, `retrain.yml` | champion di GitHub Releases; rollback: Actions → retrain → Run workflow → isi `rollback_to` |
-| F5 dashboard | `salescast/export.py`, `site/index.html`, `pages.yml` | `python -m salescast.export && python -m http.server -d site` |
-| F6 alert | `salescast/ct.py` (`alert`), `retrain.yml` | error minggu ini > 1,5× median 8 minggu → GitHub Issue otomatis |
+## Struktur repo
 
-Secret yang dibutuhkan: `KAGGLE_API_TOKEN`. Registry, Pages, dan Issue memakai `GITHUB_TOKEN` bawaan.
+```
+salescast/
+  data.py       unduh data Kaggle, baca/majukan kursor
+  backtest.py   RMSLE, baseline, backtest walk-forward
+  features.py   fitur lag/rolling/kalender/libur, deteksi data hilang
+  model.py      training dan prediksi LightGBM
+  ct.py         satu langkah retrain: nilai, gate, forecast, rollback, alert
+  export.py     data untuk dashboard
+site/           dashboard statis (HTML + SVG, tanpa library)
+reports/        metrik mingguan, forecast terbaru, penunjuk champion (di-commit oleh workflow)
+tests/          pytest
+```
+
+Rencana pengerjaan per fase ada di [PLAN.md](PLAN.md).
