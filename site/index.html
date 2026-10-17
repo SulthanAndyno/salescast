@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SalesCast</title>
+<meta name="description" content="Forecast penjualan harian 16 hari per toko × kategori (Favorita) dengan retrain otomatis.">
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f3f0;
+    --surface-1: #fcfcfb;
+    --border: #e2e0da;
+    --grid: #ebe9e4;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #77756f;
+    --series-1: #2a78d6; /* aktual */
+    --series-2: #eb6834; /* LightGBM */
+    --series-3: #1baf7a; /* baseline */
+    --good: #008300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-0: #111110;
+      --surface-1: #1a1a19;
+      --border: #2e2e2c;
+      --grid: #262624;
+      --text-primary: #f0efec;
+      --text-secondary: #c3c2b7;
+      --text-muted: #94938a;
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --good: #3fae3f;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #111110;
+    --surface-1: #1a1a19;
+    --border: #2e2e2c;
+    --grid: #262624;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #94938a;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --good: #3fae3f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--surface-0);
+    color: var(--text-primary);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 28px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 16px; margin: 0; }
+  .lede { color: var(--text-secondary); margin: 6px 0 24px; max-width: 70ch; }
+  .muted { color: var(--text-muted); font-size: 13px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile, .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; }
+  .tile { padding: 14px 16px; }
+  .tile .label { color: var(--text-secondary); font-size: 13px; }
+  .tile .value { font-size: 28px; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .tile .value.good { color: var(--good); }
+  .card { padding: 16px; margin-bottom: 16px; }
+  .card-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 16px; margin-bottom: 8px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+  .filters label { display: flex; flex-direction: column; font-size: 13px; color: var(--text-secondary); gap: 4px; }
+  select {
+    font: inherit; color: var(--text-primary); background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; min-width: 200px;
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--text-secondary); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .key { width: 16px; height: 0; border-top: 2px solid; display: inline-block; }
+  .key.dash { border-top-style: dashed; }
+  .chart { position: relative; }
+  .chart svg { display: block; width: 100%; overflow: visible; }
+  .chart:focus-within { outline: none; }
+  .hit { cursor: crosshair; }
+  .hit:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+  .tooltip {
+    position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+    white-space: nowrap; z-index: 2;
+  }
+  .tooltip .date { color: var(--text-muted); margin-bottom: 4px; }
+  .tooltip .row { display: flex; align-items: center; gap: 8px; }
+  .tooltip strong { font-variant-numeric: tabular-nums; min-width: 64px; }
+  .tooltip .name { color: var(--text-secondary); }
+  details { margin-top: 12px; }
+  summary { cursor: pointer; color: var(--text-secondary); font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--text-secondary); font-weight: 600; }
+  .table-wrap { overflow-x: auto; }
+  footer { color: var(--text-muted); font-size: 13px; margin-top: 24px; }
+  footer a { color: inherit; }
+  .error { color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<main>
+  <h1>SalesCast</h1>
+  <p class="lede">
+    Forecast penjualan harian 16 hari ke depan untuk 54 toko × 33 kategori supermarket Favorita (Ekuador).
+    Model dilatih ulang otomatis tiap run; tiap run menyimulasikan satu minggu data baru.
+    Data dianggap diketahui sampai <strong id="cursor">…</strong>.
+  </p>
+
+  <section class="tiles" aria-label="Ringkasan">
+    <div class="tile"><div class="label">Error minggu terakhir (RMSLE LightGBM)</div><div class="value" id="t-rmsle">–</div><div class="muted" id="t-rmsle-sub"></div></div>
+    <div class="tile"><div class="label">Lebih akurat dari baseline</div><div class="value good" id="t-gain">–</div><div class="muted" id="t-gain-sub"></div></div>
+    <div class="tile"><div class="label">Model yang dipakai (champion)</div><div class="value" id="t-champ" style="font-size:20px">–</div><div class="muted" id="t-champ-sub"></div></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-forecast">
+    <div class="card-head">
+      <h2 id="h-forecast">Penjualan aktual & forecast 16 hari</h2>
+      <div class="legend" id="legend-forecast"></div>
+    </div>
+    <div class="filters">
+      <label>Toko <select id="store"></select></label>
+      <label>Kategori <select id="family"></select></label>
+    </div>
+    <div class="chart" id="chart-forecast"></div>
+    <p class="muted">Garis putus-putus = forecast. Garis tegak = batas data yang sudah diketahui.</p>
+  </section>
+
+  <section class="card" aria-labelledby="h-metrics">
+    <div class="card-head">
+      <h2 id="h-metrics">Error forecast per minggu (RMSLE, makin kecil makin baik)</h2>
+      <div class="legend" id="legend-metrics"></div>
+    </div>
+    <div class="chart" id="chart-metrics"></div>
+    <p class="muted">Forecast minggu lalu dinilai terhadap aktual yang baru terungkap — model tidak pernah melihat data ini saat dilatih.</p>
+    <details>
+      <summary>Lihat tabel</summary>
+      <div class="table-wrap"><table id="metrics-table"></table></div>
+    </details>
+  </section>
+
+  <footer>
+    Data: Kaggle <em>Store Sales – Time Series Forecasting</em>. Kode & metodologi:
+    <a href="https://github.com/SulthanAndyno/salescast">github.com/SulthanAndyno/salescast</a>.
+  </footer>
+</main>
+
+<script>
+const SERIES = {
+  actual: { name: "Aktual", color: "var(--series-1)" },
+  lightgbm: { name: "LightGBM", color: "var(--series-2)", dash: true },
+  moving_average_28: { name: "Baseline (rata-rata 28 hari)", color: "var(--series-3)", dash: true },
+};
+const fmt = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 });
+const fmt3 = new Intl.NumberFormat("id-ID", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const fmtDate = (s, opts = { day: "numeric", month: "short" }) =>
+  new Date(s + "T00:00:00").toLocaleDateString("id-ID", opts);
+const NS = "http://www.w3.org/2000/svg";
+
+function el(tag, attrs = {}, parent) {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+
+function niceMax(v) {
+  if (v <= 0) return 1;
+  const p = 10 ** Math.floor(Math.log10(v));
+  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((m) => m >= v);
+}
+
+function legend(target, keys) {
+  target.replaceChildren(...keys.map((k) => {
+    const s = document.createElement("span");
+    const key = document.createElement("i");
+    key.className = "key" + (SERIES[k].dash ? " dash" : "");
+    key.style.borderColor = SERIES[k].color;
+    s.append(key, document.createTextNode(SERIES[k].name));
+    return s;
+  }));
+}
+
+// Grafik garis dengan crosshair + tooltip. labels: string tanggal; series: [{key, values (null = kosong)}]
+function lineChart(container, { labels, series, yFormat, marker, height = 300, points = false }) {
+  container.replaceChildren();
+  const W = container.clientWidth, H = height;
+  const wide = W >= 560;
+  const m = { top: 12, right: wide ? 88 : 12, bottom: 28, left: 56 };
+  const iw = W - m.left - m.right, ih = H - m.top - m.bottom;
+  const max = niceMax(Math.max(...series.flatMap((s) => s.values.filter((v) => v != null))));
+  const x = (i) => m.left + (labels.length === 1 ? iw / 2 : (i / (labels.length - 1)) * iw);
+  const y = (v) => m.top + ih - (v / max) * ih;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img" }, container);
+
+  for (let t = 0; t <= 4; t++) {
+    const v = (max / 4) * t;
+    el("line", { x1: m.left, x2: m.left + iw, y1: y(v), y2: y(v), stroke: "var(--grid)" }, svg);
+    const tx = el("text", { x: m.left - 8, y: y(v) + 4, "text-anchor": "end", "font-size": 12, fill: "var(--text-muted)" }, svg);
+    tx.textContent = yFormat(v);
+  }
+  const step = Math.max(1, Math.ceil(labels.length / (wide ? 8 : 4)));
+  labels.forEach((l, i) => {
+    if (i % step) return;
+    const tx = el("text", { x: x(i), y: H - 8, "text-anchor": "middle", "font-size": 12, fill: "var(--text-muted)" }, svg);
+    tx.textContent = fmtDate(l);
+  });
+  if (marker != null) {
+    el("line", { x1: x(marker), x2: x(marker), y1: m.top, y2: m.top + ih, stroke: "var(--text-muted)", "stroke-dasharray": "2 4" }, svg);
+  }
+
+  for (const s of series) {
+    let d = "", pen = false;
+    s.values.forEach((v, i) => {
+      if (v == null) { pen = false; return; }
+      d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+      pen = true;
+    });
+    el("path", {
+      d, fill: "none", stroke: SERIES[s.key].color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round",
+      ...(SERIES[s.key].dash ? { "stroke-dasharray": "6 4" } : {}),
+    }, svg);
+    if (points) s.values.forEach((v, i) => v != null &&
+      el("circle", { cx: x(i), cy: y(v), r: 4, fill: SERIES[s.key].color, stroke: "var(--surface-1)", "stroke-width": 2 }, svg));
+    const last = s.values.findLastIndex((v) => v != null);
+    if (wide && last >= 0) { // label langsung di ujung garis
+      const t = el("text", { x: x(last) + 8, y: y(s.values[last]) + 4, "font-size": 12, fill: "var(--text-secondary)" }, svg);
+      t.textContent = SERIES[s.key].name.split(" (")[0];
+    }
+  }
+
+  const cross = el("line", { y1: m.top, y2: m.top + ih, stroke: "var(--text-muted)", visibility: "hidden" }, svg);
+  const dots = series.map((s) => el("circle", { r: 5, fill: SERIES[s.key].color, stroke: "var(--surface-1)", "stroke-width": 2, visibility: "hidden" }, svg));
+  const hit = el("rect", { x: m.left, y: m.top, width: iw, height: ih, fill: "transparent", class: "hit", tabindex: 0,
+    "aria-label": "Geser atau pakai panah kiri/kanan untuk membaca nilai" }, svg);
+  const tip = document.createElement("div");
+  tip.className = "tooltip";
+  tip.hidden = true;
+  container.appendChild(tip);
+  let cur = labels.length - 1;
+
+  function show(i) {
+    cur = Math.max(0, Math.min(labels.length - 1, i));
+    cross.setAttribute("x1", x(cur)); cross.setAttribute("x2", x(cur)); cross.setAttribute("visibility", "visible");
+    const head = document.createElement("div");
+    head.className = "date";
+    head.textContent = fmtDate(labels[cur], { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    const rows = [];
+    series.forEach((s, k) => {
+      const v = s.values[cur];
+      dots[k].setAttribute("visibility", v == null ? "hidden" : "visible");
+      if (v == null) return;
+      dots[k].setAttribute("cx", x(cur)); dots[k].setAttribute("cy", y(v));
+      const r = document.createElement("div");
+      r.className = "row";
+      const key = document.createElement("i");
+      key.className = "key" + (SERIES[s.key].dash ? " dash" : "");
+      key.style.borderColor = SERIES[s.key].color;
+      const val = document.createElement("strong");
+      val.textContent = yFormat(v, true);
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = SERIES[s.key].name;
+      r.append(key, val, name);
+      rows.push(r);
+    });
+    tip.replaceChildren(head, ...rows);
+    tip.hidden = false;
+    const tw = tip.offsetWidth;
+    tip.style.left = `${Math.min(W - tw, Math.max(0, x(cur) + (x(cur) + 16 + tw > W ? -tw - 16 : 16)))}px`;
+    tip.style.top = `${m.top}px`;
+  }
+  function hide() {
+    tip.hidden = true;
+    cross.setAttribute("visibility", "hidden");
+    dots.forEach((d) => d.setAttribute("visibility", "hidden"));
+  }
+  hit.addEventListener("pointermove", (e) => {
+    const r = svg.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * W;
+    show(Math.round(((px - m.left) / iw) * (labels.length - 1)));
+  });
+  hit.addEventListener("pointerleave", hide);
+  hit.addEventListener("focus", () => show(cur));
+  hit.addEventListener("blur", hide);
+  hit.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); show(cur + (e.key === "ArrowLeft" ? -1 : 1)); }
+  });
+}
+
+function sumRows(rows, idx) {
+  const out = new Array(rows[0].length).fill(0);
+  for (const i of idx) rows[i].forEach((v, k) => { out[k] += v; });
+  return out;
+}
+
+async function main() {
+  const d = await (await fetch("data.json")).json();
+  document.getElementById("cursor").textContent = fmtDate(d.cursor, { day: "numeric", month: "long", year: "numeric" });
+
+  // ringkasan
+  const rows = d.metrics.filter((r) => r.lightgbm != null);
+  const last = rows.at(-1);
+  if (last) {
+    document.getElementById("t-rmsle").textContent = fmt3.format(last.lightgbm);
+    document.getElementById("t-rmsle-sub").textContent = `baseline ${fmt3.format(last.moving_average_28)} · minggu s.d. ${fmtDate(last.cursor)}`;
+    const avg = (k) => rows.reduce((a, r) => a + r[k], 0) / rows.length;
+    const gain = 1 - avg("lightgbm") / avg("moving_average_28");
+    document.getElementById("t-gain").textContent = `${Math.round(gain * 100)}%`;
+    document.getElementById("t-gain-sub").textContent = `rata-rata ${rows.length} minggu (error lebih kecil)`;
+  }
+  if (d.champion) {
+    document.getElementById("t-champ").textContent = d.champion.version;
+    const promoted = d.metrics.filter((r) => r.promoted).length;
+    const judged = d.metrics.filter((r) => "promoted" in r).length;
+    document.getElementById("t-champ-sub").textContent = `${promoted} dari ${judged} challenger lolos gate`;
+  }
+
+  // filter
+  const store = document.getElementById("store"), family = document.getElementById("family");
+  const opt = (sel, value, text) => sel.add(new Option(text, value));
+  opt(store, "", "Semua toko");
+  [...new Set(d.series.map((s) => s[0]))].sort((a, b) => a - b).forEach((s) => opt(store, s, `Toko ${s}`));
+  opt(family, "", "Semua kategori");
+  [...new Set(d.series.map((s) => s[1]))].sort().forEach((f) => opt(family, f, f.charAt(0) + f.slice(1).toLowerCase()));
+  try {
+    const saved = JSON.parse(localStorage.getItem("salescast-filter") || "{}");
+    if (saved.store != null) store.value = saved.store;
+    if (saved.family != null) family.value = saved.family;
+  } catch {}
+
+  const labels = [...d.history_dates, ...d.forecast_dates];
+  const nh = d.history_dates.length, nf = d.forecast_dates.length;
+  legend(document.getElementById("legend-forecast"), ["actual", "lightgbm", "moving_average_28"]);
+  legend(document.getElementById("legend-metrics"), ["lightgbm", "moving_average_28"]);
+
+  function drawForecast() {
+    const idx = d.series.flatMap((s, i) =>
+      (store.value === "" || String(s[0]) === store.value) && (family.value === "" || s[1] === family.value) ? [i] : []);
+    const actual = sumRows(d.actual, idx), lg = sumRows(d.lightgbm, idx), ma = sumRows(d.moving_average_28, idx);
+    const pad = (n) => new Array(n).fill(null);
+    // forecast disambung ke titik aktual terakhir supaya garisnya menyambung
+    lineChart(document.getElementById("chart-forecast"), {
+      labels, marker: nh - 1, yFormat: (v) => fmt.format(v),
+      series: [
+        { key: "actual", values: [...actual, ...pad(nf)] },
+        { key: "moving_average_28", values: [...pad(nh - 1), actual.at(-1), ...ma] },
+        { key: "lightgbm", values: [...pad(nh - 1), actual.at(-1), ...lg] },
+      ],
+    });
+    try { localStorage.setItem("salescast-filter", JSON.stringify({ store: store.value, family: family.value })); } catch {}
+  }
+
+  function drawMetrics() {
+    lineChart(document.getElementById("chart-metrics"), {
+      labels: rows.map((r) => r.cursor), height: 240, points: true, yFormat: (v, tip) => (tip ? fmt3.format(v) : v.toFixed(2)),
+      series: [
+        { key: "moving_average_28", values: rows.map((r) => r.moving_average_28) },
+        { key: "lightgbm", values: rows.map((r) => r.lightgbm) },
+      ],
+    });
+  }
+
+  const table = document.getElementById("metrics-table");
+  const head = table.createTHead().insertRow();
+  ["Minggu s.d.", "LightGBM", "Baseline", "Gate"].forEach((h) => { const th = document.createElement("th"); th.textContent = h; head.appendChild(th); });
+  const body = table.createTBody();
+  for (const r of d.metrics) {
+    const tr = body.insertRow();
+    const gate = r.rollback ? `rollback → ${r.rollback}` : "promoted" in r ? (r.promoted ? `lolos → ${r.champion}` : "ditolak") : "–";
+    [fmtDate(r.cursor, { day: "numeric", month: "short", year: "numeric" }),
+      r.lightgbm != null ? fmt3.format(r.lightgbm) : "–",
+      r.moving_average_28 != null ? fmt3.format(r.moving_average_28) : "–", gate,
+    ].forEach((t) => { tr.insertCell().textContent = t; });
+  }
+
+  store.addEventListener("change", drawForecast);
+  family.addEventListener("change", drawForecast);
+  const draw = () => { drawForecast(); drawMetrics(); };
+  draw();
+  let t;
+  new ResizeObserver(() => { clearTimeout(t); t = setTimeout(draw, 100); }).observe(document.querySelector("main"));
+}
+
+main().catch((e) => {
+  const p = document.createElement("p");
+  p.className = "error";
+  p.textContent = "Data dashboard gagal dimuat: " + e.message;
+  document.querySelector("main").prepend(p);
+});
+</script>
+</body>
+</html>

@@ -3,3 +3,4 @@ __pycache__/
 data/*
 !data/cursor.txt
 models/
+site/data.json
