@@ -1,7 +1,7 @@
 name: retrain
 on:
   schedule:
-    - cron: "0 1 * * 1" # Senin 08:00 WIB
+    - cron: "0 1 * * *" # tiap hari 08:00 WIB; tiap run = 1 minggu simulasi
   workflow_dispatch:
 concurrency:
   group: retrain
