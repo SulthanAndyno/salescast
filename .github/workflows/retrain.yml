@@ -3,15 +3,22 @@ on:
   schedule:
     - cron: "0 1 * * *" # tiap hari 08:00 WIB; tiap run = 1 minggu simulasi
   workflow_dispatch:
+    inputs:
+      rollback_to:
+        description: "Versi champion lama (mis. model-2017-02-05); kosong = retrain biasa"
+        required: false
 concurrency:
   group: retrain
   cancel-in-progress: false
 permissions:
-  contents: write # commit kursor + reports
+  contents: write # commit kursor + reports, buat release model
 jobs:
   retrain:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ROLLBACK_TO: ${{ inputs.rollback_to }} # lewat env, bukan interpolasi langsung (anti injection)
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.0
@@ -26,7 +33,20 @@ jobs:
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: uv run python -m salescast.data download
-      - run: uv run python -m salescast.ct
+      - name: Ambil champion dari GitHub Releases
+        run: |
+          v="${ROLLBACK_TO:-$(jq -r '.version // empty' reports/champion.json 2>/dev/null || true)}"
+          if [ -n "$v" ]; then gh release download "$v" -p champion.txt -D models; fi
+      - name: Retrain + gate (atau rollback)
+        run: |
+          if [ -n "$ROLLBACK_TO" ]; then uv run python -m salescast.ct rollback "$ROLLBACK_TO"
+          else uv run python -m salescast.ct; fi
+      - name: Rilis champion baru
+        run: |
+          [ -n "$(git status --porcelain reports/champion.json)" ] || exit 0
+          v=$(jq -r .version reports/champion.json)
+          gh release view "$v" >/dev/null 2>&1 && exit 0 # rollback: release sudah ada
+          gh release create "$v" models/champion.txt --title "$v" --notes "holdout RMSLE: $(jq -c .holdout reports/champion.json)"
       - name: Commit kursor + reports
         run: |
           git config user.name "github-actions[bot]"
