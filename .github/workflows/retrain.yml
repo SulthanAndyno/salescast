@@ -1,0 +1,37 @@
+name: retrain
+on:
+  schedule:
+    - cron: "0 1 * * 1" # Senin 08:00 WIB
+  workflow_dispatch:
+concurrency:
+  group: retrain
+  cancel-in-progress: false
+permissions:
+  contents: write # commit kursor + reports
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+      - run: uv sync --locked
+      # data Kaggle statis → cache sekali; hanya parquet, cursor.txt tetap dari repo
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: data/*.parquet
+          key: favorita-parquet-v1
+      - if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: uv run python -m salescast.data download
+      - run: uv run python -m salescast.ct
+      - name: Commit kursor + reports
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/cursor.txt reports/
+          git diff --cached --quiet && exit 0
+          git commit -m "ct: kursor $(cat data/cursor.txt)"
+          git push
