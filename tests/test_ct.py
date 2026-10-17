@@ -1,7 +1,7 @@
 import pandas as pd
 
 from salescast.backtest import panel
-from salescast.ct import gate, score
+from salescast.ct import alert, gate, score
 
 
 def test_score_hanya_menilai_hari_yang_baru_terungkap():
@@ -29,3 +29,12 @@ def test_gate():
     assert gate({"challenger": 0.45, "champion": 0.45, "moving_average_28": 0.60}) == []
     assert len(gate({"challenger": 0.46, "champion": 0.45, "moving_average_28": 0.60})) == 1
     assert len(gate({"challenger": 0.59, "champion": 0.45, "moving_average_28": 0.60})) == 2
+
+
+def test_alert_hanya_saat_error_melonjak():
+    weeks = [{"cursor": f"2017-01-{d:02d}", "lightgbm": 0.40, "moving_average_28": 0.6} for d in range(1, 9)]
+    assert alert(weeks) is None
+    spike = weeks + [{"cursor": "2017-01-09", "lightgbm": 0.70, "moving_average_28": 0.6}]
+    assert "0.7" in alert(spike)
+    assert alert(spike + [{"cursor": "2017-01-09", "rollback": "model-2017-01-01"}]) is None
+    assert alert(weeks[:2] + spike[-1:]) is None  # histori < 3 minggu: belum bisa menilai

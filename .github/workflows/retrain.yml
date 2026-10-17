@@ -12,6 +12,7 @@ concurrency:
   cancel-in-progress: false
 permissions:
   contents: write # commit kursor + reports, buat release model
+  issues: write # alert
 jobs:
   retrain:
     runs-on: ubuntu-latest
@@ -41,6 +42,10 @@ jobs:
         run: |
           if [ -n "$ROLLBACK_TO" ]; then uv run python -m salescast.ct rollback "$ROLLBACK_TO"
           else uv run python -m salescast.ct; fi
+      - name: Alert kalau error melonjak
+        run: |
+          msg=$(uv run python -m salescast.ct alert)
+          [ -z "$msg" ] || gh issue create --title "Alert: error forecast melonjak (kursor $(cat data/cursor.txt))" --body "$msg"
       - name: Rilis champion baru
         run: |
           [ -n "$(git status --porcelain reports/champion.json)" ] || exit 0

@@ -11,6 +11,7 @@ reports/champion.json yang di-commit.
 
 python -m salescast.ct                     # satu langkah
 python -m salescast.ct rollback VERSION    # pakai versi lama (models/champion.txt sudah diunduh workflow)
+python -m salescast.ct alert               # cetak pesan alert kalau error melonjak (kosong = normal)
 """
 
 import json
@@ -31,6 +32,8 @@ CHAMPION = REPORTS / "champion.json"
 CHAMPION_MODEL = DATA.parent / "models" / "champion.txt"
 MODELS = ("lightgbm", "moving_average_28")
 MARGIN = 0.95  # challenger wajib ≥ 5% lebih baik dari baseline
+ALERT_FACTOR = 1.5  # error minggu ini > 1,5× median 8 minggu sebelumnya → buka GitHub Issue
+DASHBOARD = "https://sulthanandyno.github.io/salescast/"
 
 
 def score(forecast: pd.DataFrame, wide: pd.DataFrame, prev: pd.Timestamp, new: pd.Timestamp) -> dict:
@@ -130,6 +133,26 @@ def step() -> None:
     write_forecast(model, ctx, wide, cursor)
 
 
+def alert(rows: list[dict]) -> str | None:
+    """Pesan alert kalau error realisasi minggu terakhir melonjak; None kalau normal."""
+    if not rows or "lightgbm" not in rows[-1]:
+        return None  # baris terakhir bukan penilaian mingguan (mis. rollback)
+    hist = [r["lightgbm"] for r in rows if "lightgbm" in r]
+    last, prev = hist[-1], hist[-9:-1]
+    if len(prev) < 3 or last <= ALERT_FACTOR * float(np.median(prev)):
+        return None
+    r = rows[-1]
+    return (
+        f"RMSLE LightGBM minggu s.d. {r['cursor']}: **{last}** "
+        f"(> {ALERT_FACTOR}× median {len(prev)} minggu sebelumnya, {np.median(prev):.4f}). "
+        f"Baseline minggu ini: {r['moving_average_28']}.\n\n"
+        f"- Dashboard: {DASHBOARD}\n"
+        "- Cek data minggu ini (anomali / data hilang) sebelum menyalahkan model.\n"
+        "- Kalau champion yang bermasalah: Actions → retrain → Run workflow → isi `rollback_to` dengan versi lama "
+        "(daftar di halaman Releases)."
+    )
+
+
 def rollback(version: str) -> None:
     if not re.fullmatch(r"model-\d{4}-\d{2}-\d{2}", version) or not CHAMPION_MODEL.exists():
         sys.exit(f"versi {version} tidak valid atau models/champion.txt belum diunduh")
@@ -144,5 +167,8 @@ def rollback(version: str) -> None:
 if __name__ == "__main__":
     if sys.argv[1:2] == ["rollback"] and len(sys.argv) == 3:
         rollback(sys.argv[2])
+    elif sys.argv[1:] == ["alert"]:
+        rows = [json.loads(line) for line in (REPORTS / "metrics.jsonl").read_text().splitlines() if line]
+        print(alert(rows) or "", end="")
     else:
         step()
