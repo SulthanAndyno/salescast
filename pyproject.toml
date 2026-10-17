@@ -3,7 +3,12 @@ name = "salescast"
 version = "0.1.0"
 description = "Forecast penjualan Favorita 16 hari per toko x kategori dengan CI/CD/CT"
 requires-python = ">=3.12"
-dependencies = ["pandas>=2.2", "pyarrow>=17", "kagglehub>=0.3"]
+dependencies = [
+    "pandas>=3.0",
+    "pyarrow>=17",
+    "kagglehub>=0.3",
+    "lightgbm>=4.7.0",
+]
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]
