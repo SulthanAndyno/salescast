@@ -32,6 +32,10 @@ Error realisasi selama simulasi, yaitu forecast yang dievaluasi setelah data akt
 | 22 Jan 2017 | 0,398 | 0,582 |
 | 29 Jan 2017 | 0,389 | 0,524 |
 
+Pada leaderboard Kaggle (16 s.d. 31 Agustus 2017, seluruh data test), model yang dilatih dengan seluruh data hingga
+15 Agustus 2017 memperoleh RMSLE 0,41773, peringkat 156 dari 565 tim per 19 Oktober 2026. File submission dibuat
+dengan `python -m salescast.submit`.
+
 Data terbaru tersedia di dashboard. Per kategori, error terendah ada pada kategori bervolume tinggi (HOME CARE dan
 PRODUCE 0,17, DAIRY 0,18) dan tertinggi pada kategori bervolume rendah dengan banyak nilai nol (LINGERIE 0,63,
 GROCERY II 0,58).
@@ -112,6 +116,7 @@ uv run pytest -q
 uv run python -m salescast.model           # backtest (sekitar 4 menit)
 uv run python -m salescast.ct              # satu langkah retraining
 uv run python -m salescast.export          # data dashboard ke site/data.json
+uv run python -m salescast.submit          # submission.csv untuk Kaggle
 ```
 
 Secret repository yang diperlukan hanya `KAGGLE_API_TOKEN`. Release, Issue, dan Pages menggunakan `GITHUB_TOKEN`.
@@ -125,7 +130,8 @@ salescast/
 ├── features.py    feature engineering, deteksi data hilang
 ├── model.py       training dan inferensi LightGBM
 ├── ct.py          retraining, gate, rollback, alert
-└── export.py      ekspor data dashboard
+├── export.py      ekspor data dashboard
+└── submit.py      submission Kaggle
 site/              dashboard statis
 reports/           metrik, forecast, champion aktif (diperbarui workflow)
 tests/
