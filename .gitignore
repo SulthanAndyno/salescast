@@ -4,3 +4,4 @@ data/*
 !data/cursor.txt
 models/
 site/data.json
+submission.csv
