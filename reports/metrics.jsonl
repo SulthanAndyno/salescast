@@ -9,3 +9,4 @@
 {"cursor": "2017-03-05", "days": 7, "lightgbm": 0.4016, "moving_average_28": 0.4452, "holdout": {"challenger": 0.5018, "moving_average_28": 0.5391, "champion": 0.5032}, "promoted": true, "rejected_because": [], "champion": "model-2017-03-05"}
 {"cursor": "2017-03-12", "days": 7, "lightgbm": 0.3887, "moving_average_28": 0.4663, "holdout": {"challenger": 0.41, "moving_average_28": 0.4626, "champion": 0.4133}, "promoted": true, "rejected_because": [], "champion": "model-2017-03-12"}
 {"cursor": "2017-03-19", "days": 7, "lightgbm": 0.3822, "moving_average_28": 0.4501, "holdout": {"challenger": 0.3814, "moving_average_28": 0.4608, "champion": 0.3821}, "promoted": true, "rejected_because": [], "champion": "model-2017-03-19"}
+{"cursor": "2017-03-26", "days": 7, "lightgbm": 0.4193, "moving_average_28": 0.4998, "holdout": {"challenger": 0.3974, "moving_average_28": 0.4775, "champion": 0.3999}, "promoted": true, "rejected_because": [], "champion": "model-2017-03-26"}
