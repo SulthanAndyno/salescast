@@ -1,1 +1,1 @@
-{"version": "model-2017-05-28", "train_cutoff": "2017-05-12", "holdout": {"challenger": 0.4149, "moving_average_28": 0.5394, "champion": 0.4243}}
+{"version": "model-2017-06-04", "train_cutoff": "2017-05-19", "holdout": {"challenger": 0.3933, "moving_average_28": 0.541, "champion": 0.3962}}
